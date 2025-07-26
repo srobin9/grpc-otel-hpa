@@ -1,0 +1,33 @@
+# hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vac-hub-test-hpa
+  namespace: grpc-test
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vac-hub-test
+  minReplicas: 1
+  maxReplicas: 10
+  
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+  # GMP를 통해 수집된 메트릭은 'External' 타입을 사용해야 합니다.
+  - type: External
+    external:
+      metric:
+        # Cloud Monitoring에서 사용하는 전체 메트릭 이름을 지정합니다.
+        # 파이프(|)를 사용하여 이름과 타입을 구분합니다.
+        name: "prometheus.googleapis.com|grpc_server_active_streams|gauge"            
+      target:
+        # Pod 메트릭의 평균값을 목표로 하므로 AverageValue를 사용합니다.
+        type: AverageValue
+        averageValue: "5"
