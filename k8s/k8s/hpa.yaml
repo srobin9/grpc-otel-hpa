@@ -24,7 +24,11 @@ spec:
     pods:
       metric:
         # 접두사 없이, GMP가 노출하는 실제 메트릭 이름을 사용합니다.
-        name: "grpc_server_call_duration_seconds_count"
+        #name: "grpc_server_call_duration_seconds_count"
+
+        # 서버 코드에서 생성한 Gauge 메트릭 이름을 사용합니다.
+        # GMP가 자동으로 타입을 인식하므로 |gauge 를 붙일 필요가 없습니다.
+        name: prometheus.googleapis.com|grpc_server_active_streams|gauge
         
       target:
         type: AverageValue

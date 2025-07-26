@@ -13,8 +13,6 @@ spec:
       labels:
         app: vac-hub-test
     spec:
-      # ===> 추가: 파드가 올바른 권한을 갖도록 KSA 지정
-      #serviceAccountName: otel-collector-ksa
       terminationGracePeriodSeconds: 60
       containers:
       - name: vac-hub-test-server
