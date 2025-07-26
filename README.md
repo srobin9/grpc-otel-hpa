@@ -96,12 +96,12 @@
 
 2.  **Cloud Build로 이미지 빌드 및 푸시:**
     ```bash
-    cd ~/grpc-otel-hpa
+    cd ~/grpc-otel-hpa/server
 
     export IMAGE_TAG=$(date -u +%Y%m%d-%H%M%S)
     echo "New image tag: $IMAGE_TAG"
     
-    gcloud builds submit ./server --tag="${REGION}-docker.pkg.dev/${PROJECT_ID}/grpc-test-repo/vac-hub-test:${IMAGE_TAG}"
+    gcloud builds submit . --tag="${REGION}-docker.pkg.dev/${PROJECT_ID}/grpc-test-repo/vac-hub-test:${IMAGE_TAG}"
     ```
 
 ---
