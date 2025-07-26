@@ -77,7 +77,7 @@
 7.  **테스트용 TLS 인증서 생성:**
     ```bash
     # k8s 디렉토리로 이동
-    cd ~/grpc-hpa-test/k8s
+    cd ~/grpc-otel-hpa/k8s
     
     # 자체 서명 인증서와 키 생성
     openssl req -x509 -newkey rsa:2048 -nodes -keyout tls.key -out tls.crt -subj "/CN=grpc.example.com"
@@ -96,7 +96,7 @@
 
 2.  **Cloud Build로 이미지 빌드 및 푸시:**
     ```bash
-    cd ~/grpc-hpa-test
+    cd ~/grpc-otel-hpa
 
     export IMAGE_TAG=$(date -u +%Y%m%d-%H%M%S)
     echo "New image tag: $IMAGE_TAG"
@@ -128,7 +128,7 @@
 
 3.  **Collector 설정 수정:**
     ```bash
-    cd ~/grpc-hpa-test/k8s
+    cd ~/grpc-otel-hpa/k8s
     kubectl apply -f ./collector-config.yaml
     ```
 
@@ -166,27 +166,27 @@
 
 1.  **Namespace 및 TLS Secret 생성:**
     ```bash
-    cd ~/grpc-hpa-test/k8s
+    cd ~/grpc-otel-hpa/k8s
     kubectl apply -f ./namespace.yaml
     kubectl create secret tls grpc-cert -n grpc-test --key tls.key --cert tls.crt --dry-run=client -o yaml | kubectl apply -f -
     ```
 
 2.  **Gateway 및 HTTPRoute 생성:**
     ```bash
-    cd ~/grpc-hpa-test/k8s
+    cd ~/grpc-otel-hpa/k8s
     kubectl apply -f ./gateway.yaml
     ```
 
 3.  **Deployment 및 Service 생성:**
     ```bash
-    cd ~/grpc-hpa-test/k8s
+    cd ~/grpc-otel-hpa/k8s
     envsubst < deployment.yaml | kubectl apply -f -
     kubectl apply -f ./service.yaml
     ```
 
 4.  **HPA 생성:**
     ```bash
-    cd ~/grpc-hpa-test/k8s
+    cd ~/grpc-otel-hpa/k8s
     kubectl apply -f ./hpa.yaml
     ```
 
@@ -228,12 +228,12 @@
 3.  **클라이언트 실행:**
     ```bash
     # 1. 서버 인증서 파일을 클라이언트 디렉토리로 복사
-    cp ~/grpc-hpa-test/k8s/tls.crt ~/grpc-hpa-test/client/
+    cp ~/grpc-otel-hpa/k8s/tls.crt ~/grpc-otel-hpa/client/
     
     # 2. 가상환경 활성화 및 client 디렉토리로 이동
-    cd ~/grpc-hpa-test
+    cd ~/grpc-otel-hpa
     source venv/bin/activate
-    cd ~/grpc-hpa-test/client
+    cd ~/grpc-otel-hpa/client
     
     # 3. 클라이언트 실행 (스트림 수를 늘려 부하를 발생시킵니다)
     python client.py [GATEWAY_EXTERNAL_IP]:443 --streams 15 --cert_file ./tls.crt
