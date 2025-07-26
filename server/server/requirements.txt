@@ -1,0 +1,11 @@
+# server/requirements.txt (최종 수정안)
+
+# gRPC 라이브러리 및 새로운 Observability 패키지
+grpcio>=1.62.3
+grpcio-observability>=1.62.3
+grpcio-tools>=1.62.3
+grpcio-health-checking>=1.62.3
+
+# OpenTelemetry SDK 및 OTLP Exporter
+opentelemetry-sdk>=1.25.0
+opentelemetry-exporter-otlp-proto-grpc>=1.25.0

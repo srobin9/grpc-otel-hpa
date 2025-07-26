@@ -1,0 +1,17 @@
+# pod-monitoring.yaml
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: vac-hub-test-pm
+  namespace: grpc-test
+spec:
+  selector:
+    matchLabels:
+      app: vac-hub-test
+  endpoints:
+  - port: grpc # Deployment YAML에 정의된 포트 이름과 일치해야 합니다.
+    interval: 30s
+    # 참고: 우리 서버 코드는 Prometheus 엔드포인트를 직접 노출하지 않고,
+    # OTLP로 Collector에 보내는 방식입니다. 이 설정은 Collector를 직접 스크랩할 때 더 유효하지만,
+    # GMP가 어쨌든 OTel Collector로부터 받은 메트릭을 HPA가 사용할 수 있도록 해줍니다.
+    # 그럼에도 이 리소스를 생성하는 것이 GMP-HPA 통합의 공식적인 절차입니다.
