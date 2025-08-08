@@ -61,20 +61,13 @@
         --location=$REGION
     ```
 
-5.  **Gateway API 기능 활성화:**
-    ```bash
-    gcloud container clusters update $CLUSTER_NAME \
-        --location=$REGION \
-        --gateway-api=standard
-    ```
-
-6.  **클러스터 인증 정보 가져오기:**
+5.  **클러스터 인증 정보 가져오기:**
     ```bash
     gcloud container clusters get-credentials $CLUSTER_NAME --location $REGION
     kubectl config current-context
     ```
 
-7.  **테스트용 TLS 인증서 생성:**
+6.  **테스트용 TLS 인증서 생성:**
     ```bash
     # k8s 디렉토리로 이동
     cd ~/grpc-otel-hpa/k8s
