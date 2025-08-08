@@ -1,5 +1,7 @@
 # server.py (OTLP Exporter + HPA/부하분산 기능 통합안)
+# Async 방식으로 grpc 트래픽 처리
 
+import asyncio
 import time
 import grpc
 from concurrent import futures
@@ -60,17 +62,17 @@ processed_message_counter = custom_meter.create_counter(
 
 # StreamerService 클래스
 class StreamerService(streaming_pb2_grpc.StreamerServicer):
-    def ProcessTextStream(self, request_iterator, context):
+    async def ProcessTextStream(self, request_iterator, context):
         # ★★★ 시작: 요청이 시작되면 UpDownCounter를 1 증가시킵니다 ★★★
         active_streams_updown_counter.add(1)
         logging.info("Stream opened. Active stream count changing.")
 
         message_count = 0
         try:
-            for request in request_iterator:
+            async for request in request_iterator:
                 message_count += 1
                 processed_message_counter.add(1)
-                time.sleep(0.01)
+                await asyncio.sleep(0.01)
 
             logging.info(f"Stream closed normally. Processed {message_count} messages.")
             return streaming_pb2.TextResponse(message_count=message_count)
@@ -86,7 +88,7 @@ class StreamerService(streaming_pb2_grpc.StreamerServicer):
             active_streams_updown_counter.add(-1)
             logging.info("Stream finished. Active stream count changing.")
 
-def serve():
+async def serve():
     # 2. ★★★ gRPC 서버 연결 관리 옵션 추가 ★★★
     server_options = [
         # 테스트를 위해 1분으로 설정 (실제 환경에서는 5~10분으로 조정)
@@ -97,10 +99,7 @@ def serve():
     ]
     
     # 서버 생성 시 options 인자 전달
-    server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=10),
-        options=server_options
-    )
+    server = grpc.aio.server(options=server_options)
     
     streaming_pb2_grpc.add_StreamerServicer_to_server(StreamerService(), server)
 
@@ -109,17 +108,22 @@ def serve():
     health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
 
     server.add_insecure_port("[::]:50051")
-    server.start()
+
+    # 서버를 비동기적으로 시작합니다.
+    await server.start()
     logging.info(f"gRPC server started on port 50051 with max_connection_age={server_options[0][1]}ms, grace={server_options[1][1]}ms.")
-    server.wait_for_termination()
+
+    # 서버가 종료될 때까지 비동기적으로 대기합니다.
+    await server.wait_for_termination()
 
 
 if __name__ == "__main__":
     try:
-        # 3. ★★★ Prometheus 전용 HTTP 서버 시작 코드 제거 ★★★
         # OTLP exporter는 백그라운드에서 주기적으로 메트릭을 전송하므로,
         # 별도의 메트릭용 웹 서버가 필요 없습니다.
-        serve()
+        asyncio.run(serve())
+    except KeyboardInterrupt:
+        logging.info("Received keyboard interrupt. Shutting down...")
     finally:
         logging.info("Shutting down...")
         # 전역 플러그인 등록 해제
