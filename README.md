@@ -221,16 +221,16 @@
 3.  **클라이언트 실행:**
     ```bash
     # 1. 서버 인증서 파일을 클라이언트 디렉토리로 복사
-    cp ~/grpc-prometheus-hpa/k8s/tls.crt ~/grpc-prometheus-hpa/client/
+    cp ~/grpc-otel-hpa/k8s/tls.crt ~/grpc-otel-hpa/client/
 
     # 2. Python 가상 환경 생성 (필요시)
-    cd ~/grpc-prometheus-hpa
+    cd ~/grpc-otel-hpa
     python3 -m venv venv
 
     # 3. 가상환경 활성화 및 client 디렉토리로 이동
-    cd ~/grpc-prometheus-hpa
+    cd ~/grpc-otel-hpa
     source venv/bin/activate
-    cd ~/grpc-prometheus-hpa/client
+    cd ~/grpc-otel-hpa/client
 
     # 4. gRPC 라이브러리 설치 (필요시)
     pip install -r requirements.txt

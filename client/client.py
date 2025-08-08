@@ -3,75 +3,150 @@ import time
 import threading
 import argparse
 import random
+import logging
+import sys
 
 import streaming_pb2
 import streaming_pb2_grpc
 
-def generate_messages():
-    """메시지를 무한정 생성하는 제너레이터"""
+# --- 로깅 설정 ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(threadName)s - %(message)s',
+    stream=sys.stdout
+)
+
+def generate_messages(client_id: str, channel_id: int, stream_id: int):
+    """스트림 요청 메시지를 생성하는 제너레이터"""
     i = 0
     while True:
-        yield streaming_pb2.TextRequest(message=f"This is message number {i}")
+        request = streaming_pb2.TextRequest(
+            message=f"Msg num {i}",
+            client_id=client_id,
+            channel_id=int(channel_id)
+        )
+        yield request
         i += 1
-        time.sleep(0.1) # 0.1초마다 메시지 전송
+        time.sleep(random.uniform(0.1, 0.3)) # 약간의 무작위성을 추가
 
-def run_stream(server_address: str, root_certs: bytes):
-    """서버의 연결 종료를 예상하고 자동으로 재연결하는 단일 gRPC 스트림을 실행하는 함수"""
-    
-    while True: # 스트림이 어떤 이유로든 종료되면, 자동으로 재시도하기 위한 무한 루프
+def run_single_stream(stub: streaming_pb2_grpc.StreamerStub, client_id: str, channel_id: int, stream_id: int):
+    """
+    하나의 gRPC 스트림을 실행하는 워커 함수.
+    이 함수는 채널이 유효하다고 가정하고, 스트림이 끊어지면 그냥 종료됩니다.
+    """
+    log_prefix = f"[Client: {client_id}, Chan: {channel_id}, Stream: {stream_id}]"
+    try:
+        logging.info(f"{log_prefix} Stream starting.")
+        
+        # 제너레이터를 통해 요청 스트림 생성
+        request_iterator = generate_messages(client_id, channel_id, stream_id)
+        
+        # 서버로 스트림 요청 시작
+        response_iterator = stub.ProcessTextStream(request_iterator)
+        
+        # 서버로부터 오는 응답 처리 (이 예제에서는 거의 발생하지 않음)
+        for response in response_iterator:
+            logging.info(f"{log_prefix} Received response: {response.message_count}")
+
+    except grpc.RpcError as e:
+        # 연결 종료(UNAVAILABLE)나 클라이언트 취소(CANCELLED) 등은
+        # 채널 관리자 레벨에서 처리해야 하므로 여기서는 단순히 로그만 남기고 종료합니다.
+        if e.code() in [grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.CANCELLED]:
+            logging.warning(f"{log_prefix} Stream terminated with code: {e.code()}. Channel needs reconnect.")
+        else:
+            logging.error(f"{log_prefix} Unexpected RPC error: {e.code()} - {e.details()}")
+    except Exception as e:
+        logging.error(f"{log_prefix} Unexpected Python error: {e}")
+    finally:
+        logging.info(f"{log_prefix} Stream thread finished.")
+
+def manage_channel(server_address: str, credentials, client_id: str, channel_id: int, streams_on_this_channel: int):
+    """
+    하나의 채널과 그 위에서 동작하는 여러 스트림들을 관리합니다.
+    채널 연결이 끊어지면, 채널을 재생성하고 그 위의 스트림들을 다시 시작합니다.
+    """
+    thread_name = f"ChannelManager-{channel_id}"
+    threading.current_thread().name = thread_name
+
+    while True:
+        channel = None
+        stream_threads = []
         try:
-            credentials = grpc.ssl_channel_credentials(root_certificates=root_certs)
-            with grpc.secure_channel(
-                server_address, 
-                credentials, 
+            logging.info(f"Creating new channel to {server_address}")
+            channel = grpc.secure_channel(
+                server_address,
+                credentials,
                 options=(('grpc.ssl_target_name_override', 'grpc.example.com'),)
-            ) as channel:
-                stub = streaming_pb2_grpc.StreamerStub(channel)
-                print(f"Starting a new stream to {server_address}...")
-                
-                # 스트림 시작
-                response = stub.ProcessTextStream(generate_messages())
-                
-                # 스트림이 정상적으로 완료된 경우 (실제로는 거의 발생하지 않음)
-                print(f"Stream finished cleanly. Server processed {response.message_count} messages.")
-                break # 정상 종료 시에는 루프 탈출
+            )
+            stub = streaming_pb2_grpc.StreamerStub(channel)
 
-        except grpc.RpcError as e:
-            # 서버가 max_connection_age로 연결을 종료하면 UNAVAILABLE 코드가 발생합니다.
-            if e.code() == grpc.StatusCode.UNAVAILABLE:
-                print(f"Connection likely closed by server for rebalancing. Reconnecting automatically...")
-            else:
-                # 그 외 다른 RPC 오류 (네트워크 문제 등)
-                print(f"Stream failed with RPC error: {e.code()} - {e.details()}. Retrying...")
+            for i in range(streams_on_this_channel):
+                stream_id = (channel_id * 100) + i # 고유한 스트림 ID 생성
+                thread = threading.Thread(
+                    target=run_single_stream,
+                    args=(stub, client_id, channel_id, stream_id),
+                    daemon=True
+                )
+                stream_threads.append(thread)
+                thread.start()
+            
+            # 모든 스트림 스레드가 종료될 때까지 대기
+            # 하나라도 종료되면 채널에 문제가 생긴 것이므로 루프를 다시 시작해 재연결
+            for t in stream_threads:
+                t.join()
 
         except Exception as e:
-            # gRPC 외의 예외 처리
-            print(f"An unexpected error occurred: {e}. Retrying...")
-
-        # 재연결 전, 모든 클라이언트가 동시에 재연결을 시도하는 것을 막기 위해
-        # 약간의 무작위 지연(Jitter)을 줍니다.
-        reconnect_delay = random.uniform(1, 5) 
-        print(f"Will attempt to reconnect in {reconnect_delay:.2f} seconds.")
-        time.sleep(reconnect_delay)
+            logging.error(f"Error in channel manager: {e}")
+        finally:
+            if channel:
+                channel.close()
+            logging.warning("Channel connection lost. Re-establishing all streams on this channel.")
+            time.sleep(random.uniform(1, 5)) # Jitter
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("server_address", help="The gRPC server address (e.g., 34.12.34.56:50051)")
-    parser.add_argument("--streams", type=int, default=5, help="Number of concurrent streams to run")
+    parser = argparse.ArgumentParser(description="gRPC multiplexing client")
+    parser.add_argument("server_address", help="The gRPC server address (e.g., grpc.example.com:443)")
+    parser.add_argument("--client-id", type=str, required=True, help="A unique identifier for this client instance")
+    parser.add_argument("--streams", type=int, default=10, help="Total number of streams per client instance")
+    parser.add_argument("--channels", type=int, default=1, help="Number of channels to distribute streams over")
     parser.add_argument("--cert_file", help="Path to the server's certificate file", required=True)
     args = parser.parse_args()
 
-    # 인증서 파일을 읽어들입니다.
-    with open(args.cert_file, 'rb') as f:
-        root_certs = f.read()
+    # --- [조치] 파싱된 인수를 확인하기 위한 로그 추가 ---
+    print(f"CLIENT STARTING ON '{args.client_id}'. ARGS: {args}", flush=True)
     
-    threads = []
-    for _ in range(args.streams):
-        # run_stream 함수에 인증서 내용을 전달합니다.
-        thread = threading.Thread(target=run_stream, args=(args.server_address, root_certs))
-        threads.append(thread)
-        thread.start()
-        time.sleep(0.5) # 스트림을 약간의 시간차를 두고 시작
+    try:
+        with open(args.cert_file, 'rb') as f:
+            root_certs = f.read()
+    except FileNotFoundError:
+        logging.critical(f"Certificate file not found at '{args.cert_file}'")
+        sys.exit(1)
 
-    for thread in threads:
-        thread.join()
+    credentials = grpc.ssl_channel_credentials(root_certificates=root_certs)
+
+    manager_threads = []
+    
+    # 스트림을 채널에 분배
+    base_streams_per_channel = args.streams // args.channels
+    remainder_streams = args.streams % args.channels
+
+    for i in range(args.channels):
+        num_streams = base_streams_per_channel
+        if i < remainder_streams:
+            num_streams += 1
+        
+        if num_streams == 0:
+            continue
+
+        thread = threading.Thread(
+            target=manage_channel,
+            args=(args.server_address, credentials, args.client_id, i, num_streams)
+        )
+        manager_threads.append(thread)
+        thread.start()
+
+    try:
+        for thread in manager_threads:
+            thread.join()
+    except KeyboardInterrupt:
+        logging.info("Shutdown signal received. Exiting.")
